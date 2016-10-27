@@ -33,6 +33,11 @@ module NpmPipelineRails
         end
       end
     end
+
+    def running?(signature)
+      normalized_signature = "[#{signature.slice(0,1)}]#{signature.slice(1, signature.length-1)}"
+      !(`ps aux | grep "#{normalized_signature}"`.blank?)
+    end
   end
 
   class Railtie < ::Rails::Railtie
@@ -40,6 +45,7 @@ module NpmPipelineRails
     config.npm.enable_watch = ::Rails.env.development?
     config.npm.build = ['npm run build']
     config.npm.watch = ['npm run start']
+    config.npm.watch_signature = ['npm.*start']
     config.npm.install = ['npm install']
     config.npm.install_on_asset_precompile = true
 
@@ -56,12 +62,11 @@ module NpmPipelineRails
         task(:precompile).enhance ['npm_build']
       end
     end
-
     initializer 'npm_pipeline.watch' do |app|
-      if app.config.npm.enable_watch && ::Rails.const_defined?(:Server)
-        Utils.do_system app.config.npm.install
-        [*app.config.npm.watch].each do |cmd|
-          Utils.background(cmd) { Utils.do_system [cmd] }
+      if app.config.npm.enable_watch && (!::Rails.const_defined?(:Console) && File.basename($0) != "rake")
+        Utils.do_system app.config.npm.install if !Utils.running?(app.config.npm.watch_signature.first)
+        [*app.config.npm.watch].each_with_index do |cmd, index|
+          Utils.background(cmd) { Utils.do_system [cmd] } if !Utils.running?(config.npm.watch_signature[index] || cmd)
         end
       end
     end
